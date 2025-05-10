@@ -1,0 +1,150 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler, PolynomialFeatures
+from sklearn.linear_model import LinearRegression, Ridge, Lasso
+from sklearn.ensemble import RandomForestRegressor
+from xgboost import XGBRegressor
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+
+# Use the correct URL for the kc_house_data.csv file
+url = 'https://raw.githubusercontent.com/asha-hiremath04/House-Price-Prediction-Project/refs/heads/main/kc_house_data.csv'  
+
+df = pd.read_csv(url)
+print("Initial Dataset Loaded.")
+print(df.head())
+# Corrected 'rint' to 'print'
+print("\nMissing Values Check:\n", df.isnull().sum())
+duplicates = df.duplicated().sum()
+print(f"Number of duplicate records: {duplicates}")
+
+# Drop duplicates if any
+df.drop_duplicates(inplace=True)
+
+# Outlier visualization
+plt.figure(figsize=(15, 10))
+# Calculate num_rows dynamically based on the number of columns
+num_cols = len(df.columns[:-1])  # Number of columns (excluding the last)
+num_rows = (num_cols + 3) // 4   # Number of rows needed, rounded up
+for i, col in enumerate(df.columns[:-1], 1):
+    plt.subplot(num_rows, 4, i) # Adjust the subplot grid dynamically
+    sns.boxplot(data=df, x=col)
+    plt.tight_layout()
+plt.suptitle("Outlier Detection - Boxplots", fontsize=18)
+plt.show()
+print("\nDataset Info:")
+print(df.info())
+
+# Check if 'dis' and 'rad' columns exist before creating the new feature.
+if 'dis' in df.columns and 'rad' in df.columns:
+    # Distance to employment centers ratio
+    df['dis_per_rad'] = df['dis'] / df['rad']  # accessibility vs. distance to employment hubs
+else:
+    print("Columns 'dis' and/or 'rad' not found in the DataFrame.")
+
+# Tax to pupil-teacher ratio
+if 'tax' in df.columns and 'ptratio' in df.columns:
+    df['tax_ptratio_ratio'] = df['tax'] / df['ptratio']  # reflects quality of services vs. tax burden
+else:
+    print("Columns 'tax' and/or 'ptratio' not found in the DataFrame.")
+
+# Polynomial Features
+# Changed 'rm' to 'bedrooms' and 'lstat' to 'sqft_living' for kc_house_data.csv
+poly = PolynomialFeatures(degree=2, include_bias=False)
+poly_features = poly.fit_transform(df[['sqft_living', 'bedrooms']])  
+poly_df = pd.DataFrame(poly_features, columns=poly.get_feature_names_out(['sqft_living', 'bedrooms']))
+df = pd.concat([df, poly_df[['sqft_living^2', 'bedrooms^2', 'sqft_living bedrooms']]], axis=1)
+
+# Binning Age
+# Changed 'age' to 'yr_built' for kc_house_data.csv
+if 'yr_built' in df.columns:
+    df['age_binned'] = pd.cut(df['yr_built'], bins=[0, 35, 70, 100], labels=['New', 'Mid-aged', 'Old'])  
+    df = pd.get_dummies(df, columns=['age_binned'], drop_first=True)
+else:
+    print("Column 'yr_built' not found in the DataFrame.")
+
+df.hist(figsize=(16, 12), bins=30, edgecolor='black')
+plt.suptitle('Feature Distributions', fontsize=20)
+plt.tight_layout()
+plt.show()
+
+# Correlation Matrix
+# Convert 'date' to datetime and extract year
+df['date'] = pd.to_datetime(df['date']).dt.year  # Extract year from 'date'
+
+plt.figure(figsize=(12, 10))
+sns.heatmap(df.corr(), annot=True, cmap='coolwarm', fmt=".2f")
+plt.title('Correlation Matrix', fontsize=18)
+plt.show()
+
+# Pairplot (Subset to avoid overload)
+# Updated column names to match kc_house_data.csv
+# Replaced 'ptratio' with 'condition', as 'ptratio' might not be in kc_house_data.csv
+sns.pairplot(df[['price', 'bedrooms', 'sqft_living', 'condition', 'grade', 'yr_built']], diag_kind='kde') 
+plt.suptitle('Pairplot of Key Features', y=1.02)
+plt.show()
+
+# Scatterplots (Selected Features vs Target)
+# Updated column names to match kc_house_data.csv
+fig, axs = plt.subplots(2, 3, figsize=(15, 8))
+sns.scatterplot(data=df, x='bedrooms', y='price', ax=axs[0, 0])
+sns.scatterplot(data=df, x='sqft_living', y='price', ax=axs[0, 1])
+sns.scatterplot(data=df, x='condition', y='price', ax=axs[0, 2]) 
+sns.scatterplot(data=df, x='grade', y='price', ax=axs[1, 0])  
+sns.scatterplot(data=df, x='yr_built', y='price', ax=axs[1, 1]) 
+sns.scatterplot(data=df, x='view', y='price', ax=axs[1, 2])  
+fig.suptitle("Feature Relationships with House Price", fontsize=20)
+plt.tight_layout()
+plt.show()
+
+# CHAS Variable (using 'waterfront' as a proxy for 'chas')
+if 'waterfront' in df.columns:  
+    sns.barplot(x='waterfront', y='price', data=df, palette='cool')
+    plt.title('Average House Price by Waterfront Proximity')
+    plt.xlabel('Waterfront (0 = No, 1 = Yes)')
+    plt.ylabel('Median House Price')
+    plt.show()
+else:
+    print("Column 'waterfront' not found in the DataFrame. Skipping CHAS variable visualization.")
+
+# Define X and y (FEATURES AND TARGET)
+# Changed 'medv' to 'price'
+X = df.drop("price", axis=1)  
+y = df["price"]           
+
+# Train-Test Split
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# Standardization (SCALING)
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train)
+X_test_scaled = scaler.transform(X_test)
+
+# Define models
+models = {
+    "Linear Regression": LinearRegression(),
+    "Ridge Regression": Ridge(alpha=1.0),
+    "Lasso Regression": Lasso(alpha=0.1),
+    "Random Forest": RandomForestRegressor(n_estimators=100, random_state=42),
+    "XGBoost": XGBRegressor(n_estimators=100, learning_rate=0.1)
+}
+
+# Train and Evaluate
+results = {}
+
+for name, model in models.items():
+    model.fit(X_train_scaled, y_train)
+    preds = model.predict(X_test_scaled)
+    results[name] = {
+        "R² Score": r2_score(y_test, preds),
+        "MAE": mean_absolute_error(y_test, preds),
+        "RMSE": np.sqrt(mean_squared_error(y_test, preds)) 
+    }
+
+# Print results (optional)
+for name, metrics in results.items():
+    print(f"\n{name}:")
+    for metric, value in metrics.items():
+        print(f"  {metric}: {value:.4f}")
