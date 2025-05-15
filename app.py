@@ -1,36 +1,43 @@
 import streamlit as st
-import pandas as pd
-import numpy as np
+import gdown
 import joblib
+import os
+import pandas as pd
 
-# Load model, scaler, and feature columns
+# Google Drive file IDs
+model_id = "1H9BvURY5XejXmtSYcRyeahgGShWJn_Pu"
+scaler_id = "1H3ncHCDTOWMuoMnoJUL3d0roKdMxCRtm"
+columns_id = "1H9QE__qgGnoabLjFc3q1JB0BX5lP_Th5"
+
+# Function to download files from Google Drive if not already present
+def download_if_needed(file_id, output_path):
+    if not os.path.exists(output_path):
+        url = f"https://drive.google.com/uc?id={file_id}"
+        gdown.download(url, output_path, quiet=False)
+
+# Download the necessary files
+download_if_needed(model_id, "model.pkl")
+download_if_needed(scaler_id, "scaler.pkl")
+download_if_needed(columns_id, "columns.pkl")
+
+# Load model, scaler, and columns
 model = joblib.load("model.pkl")
 scaler = joblib.load("scaler.pkl")
 columns = joblib.load("columns.pkl")
 
+# Streamlit UI
 st.title("House Price Prediction App")
 
-# Create input fields
-st.header("Enter House Features")
+st.write("Enter the feature values below:")
 
-input_data = {}
+# Create input fields for all features
+user_input = {}
 for col in columns:
-    if 'age_binned' in col or 'waterfront' in col or col in ['view', 'grade', 'condition']:
-        input_data[col] = st.selectbox(f"{col}", options=[0, 1])
-    else:
-        input_data[col] = st.number_input(f"{col}", min_value=0.0)
+    user_input[col] = st.number_input(f"{col}", value=0.0)
 
-# Convert input to DataFrame
-input_df = pd.DataFrame([input_data])
-# Ensure missing columns (from one-hot) are filled with 0
-for col in columns:
-    if col not in input_df.columns:
-        input_df[col] = 0
-
-# Scale input
-input_scaled = scaler.transform(input_df)
-
-# Predict
-if st.button("Predict Price"):
-    prediction = model.predict(input_scaled)[0]
-    st.success(f"Predicted House Price: ${prediction:,.2f}")
+# Make prediction
+if st.button("Predict"):
+    input_df = pd.DataFrame([user_input])
+    input_scaled = scaler.transform(input_df)
+    prediction = model.predict(input_scaled)
+    st.success(f"Predicted House Price: ${prediction[0]:,.2f}")
